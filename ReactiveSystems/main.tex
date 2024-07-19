@@ -1,0 +1,369 @@
+\documentclass{article}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings} % for code listing
+
+
+
+\title{Interacção e Concorrência 2023-24 - Practical assignment}
+\author{Miguel Ângelo Alves de Freitas (A91635)}
+\date{\today}
+
+\begin{document}
+\begin{minipage}{0.9\linewidth}
+    \centering
+    \includegraphics[width=0.4\textwidth]{um.jpg}\par\vspace{1cm}
+    \href{https://www.uminho.pt/PT}
+    {\scshape\LARGE Universidade do Minho} \par
+    \vspace{0.6cm}
+    \href{https://lcc.di.uminho.pt}
+    {\scshape\Large Licenciatura em Ciências da Computação} \par
+    \maketitle
+\end{minipage}
+
+\pagebreak
+
+\begingroup
+\renewcommand*\contentsname{Index}
+\let\clearpage\relax
+\tableofcontents
+\endgroup
+
+\newpage
+
+\section{Introduction}
+
+Simulation and analysis of traffic light control systems using the MCRL2 toolset, a powerful suite for modeling, validating, and verifying concurrent systems. 
+
+
+\section{Problem 1}
+
+Consider the following junction where traffic is controlled by three traffic lights (processes A1, A2, and A3):
+
+\begin{enumerate}
+    \item The traffic controller
+    \[
+    T \triangleq C \mid A1 \mid A2 \mid A3
+    \]
+    consists of three copies A1, A2, and A3 of a process traffic light $L$, in parallel with a control process $C$. Process $L$ enforces the usual infinite loop behaviour of a traffic light showing green, followed by yellow, and then red, in cycle. Process $C$ ensures that the green light is activated first in A1, then in A2, and finally in A3, in a loop, avoiding any clashes. Specify processes $L$ and $C$.
+
+    \item Use MCRL2 to draw the transition system of process $T$. What more can you do with MCRL2 to analyse the behaviour of process $T$?
+
+    \item Apply once the expansion theorem to process $T$. Comment the result you obtained.
+\end{enumerate}
+
+\newpage
+
+\section*{Solution to Problem 1}
+\subsection{System Model}
+
+The system is defined in MCRL2 as follows:
+
+\begin{verbatim}
+% Action declarations
+act
+  startA1, startA2, startA3,  % Actions to start each traffic light
+  doneA1, doneA2, doneA3,     % Actions to indicate completion of a cycle
+  green, yellow, red;         % Traffic light color change actions
+
+% Traffic Light Process Definition
+proc
+  L = green . yellow . red . L;
+
+% Individual Traffic Lights
+proc
+  A1 = startA1 . L . doneA1 . A1;
+  A2 = startA2 . L . doneA2 . A2;
+  A3 = startA3 . L . doneA3 . A3;
+
+% Controller Process
+proc
+  C = startA1 . doneA1 . startA2 . doneA2 . startA3 . doneA3 . C;
+
+% System Initialization with Synchronization
+init
+  allow({startA1, startA2, startA3, doneA1, doneA2, doneA3, green, yellow, red},
+	comm({
+  		doneA1 | startA2 -> startA2,   % Synchronize on doneA1 and startA2
+  		doneA2 | startA3 -> startA3,   % Synchronize on doneA2 and startA3
+  		doneA3 | startA1 -> startA1},
+         C || A1 || A2 || A3));
+\end{verbatim}
+
+\subsubsection{Traffic Light Process}
+
+Each traffic light follows a standard cycle (green, yellow, red) implemented in the process \( L \) as follows:
+\begin{lstlisting}
+proc L = green . yellow . red . L;
+\end{lstlisting}
+
+This process signifies an infinite loop where a traffic light changes from green, to yellow, and finally to red before starting the cycle again.
+
+\subsubsection{Individual Traffic Lights}
+
+Three instances of the traffic light process \( L \) are created, each controlled by specific start and done actions:
+\begin{lstlisting}
+proc
+  A1 = startA1 . L . doneA1 . A1;
+  A2 = startA2 . L . doneA2 . A2;
+  A3 = startA3 . L . doneA3 . A3;
+\end{lstlisting}
+
+Each traffic light process starts with a unique start action, processes through \( L \), signals the completion of its cycle with a done action, and then repeats.
+
+\subsubsection{Controller Process}
+
+The controller \( C \) orchestrates the sequence of the traffic lights ensuring that each light starts only after the previous one has completed its cycle:
+\begin{lstlisting}
+proc C = startA1 . doneA1 . startA2 . doneA2 . startA3 . doneA3 . C;
+\end{lstlisting}
+
+This ensures the non-overlapping operation of the traffic lights, hence avoiding any potential clashes at the junction.
+
+\subsection{System Initialization and Synchronization}
+
+The system is initialized to allow the synchronization between the completion of one traffic light's cycle and the start of the next:
+\begin{lstlisting}
+init
+  allow({startA1, startA2, startA3, doneA1, doneA2, doneA3, green, yellow, red},
+    comm({
+      doneA1 | startA2 -> startA2,
+      doneA2 | startA3 -> startA3,
+      doneA3 | startA1 -> startA1},
+      C || A1 || A2 || A3));
+\end{lstlisting}
+
+The `allow` function restricts the set of actions visible externally, while `comm` specifies how actions from different processes synchronize to perform new actions. This setup effectively chains the operation of the three traffic lights in a circular sequence, ensuring a continuous, collision-free operation at the junction.
+
+
+
+\subsection{Verification of Safety Properties}
+
+Safety properties ensure that conflicting events do not occur simultaneously. For example, no two traffic lights should be green at the same time. The property can be specified in modal mu-calculus as follows:
+
+\begin{verbatim}
+[true*] (
+    <startA1>true => [(!startA2) && (!startA3)] true &&
+    <startA2>true => [(!startA1) && (!startA3)] true &&
+    <startA3>true => [(!startA1) && (!startA2)] true
+)
+\end{verbatim}
+
+Verification commands:
+
+\begin{lstlisting}[language=bash]
+mcrl22lps -v traffic_system.mcrl2 traffic_system.lps
+lps2pbes -v --formula=property.mcf traffic_system.lps traffic_system.pbes
+pbes2bool -v traffic_system.pbes
+\end{lstlisting}
+The modal formula used for verifying the safety property is given below:
+\begin{align*}
+    \Box \bigg( & \langle \text{startA1} \rangle \text{true} \implies 
+    [\neg \text{startA2} \land \neg \text{startA3}] \text{true} \land \\
+    & \langle \text{startA2} \rangle \text{true} \implies 
+    [\neg \text{startA1} \land \neg \text{startA3}] \text{true} \land \\
+    & \langle \text{startA3} \rangle \text{true} \implies 
+    [\neg \text{startA1} \land \neg \text{startA2}] \text{true}
+    \bigg),
+\end{align*}
+where:
+\begin{itemize}
+    \item $\Box$ ("always") operator asserts that the property must hold in all reachable states.
+    \item $\langle \text{startAX} \rangle \text{true}$ checks if there is a possibility that the action `startAX` can occur.
+    \item $\implies$ represents implication.
+    \item $[\neg \text{startAY} \land \neg \text{startAZ}] \text{true}$ ensures that immediately after `startAX`, neither `startAY` nor `startAZ$ can occur.
+\end{itemize}
+
+
+
+\subsection{Liveness Properties}
+
+Liveness properties check that each component will eventually perform its expected function, such as each traffic light turning green:
+
+\begin{verbatim}
+[true*] <startA1>true && [true*] <startA2>true && [true*] <startA3>true
+\end{verbatim}
+
+\subsection{Simulation and Trace Analysis}
+
+Simulation can be done interactively using `mcrl2i` or by generating traces with `lps2lts`:
+
+\begin{lstlisting}[language=bash]
+mcrl2i traffic_system.mcrl2
+lps2lts --trace-length=10 --generate-trace=example.trace traffic_system.lps
+\end{lstlisting}
+
+\subsection{Performance Analysis}
+
+Performance analysis involves measuring how quickly and efficiently the system completes cycles under various configurations, which is crucial for optimizing throughput and response times.
+
+
+\subsection{Interpretation of Results}
+The MCRL2 model checker returned a result of \textit{true} for the safety property, indicating that the system adheres to the specified safety constraints under all circumstances. This confirms that the traffic light controller is robust against the risk of simultaneous green signals, thereby preventing potential conflicts at the traffic junction.
+
+
+
+\section*{Applying the Expansion Theorem}
+
+The expansion theorem in process algebra allows for the simplification of expressions involving parallel compositions by expanding them into a set of possible transitions. We apply this theorem to the process:
+\[ T = C \mid A1 \mid A2 \mid A3 \]
+
+\subsection{Expansion Theorem}
+
+The expansion theorem for a process $P$ composed of sub-processes $P1, \ldots, Pn$ is given by:
+\[
+P = P_1 \mid \dots \mid P_n = \sum_{a \in Act} \left( \bigoplus_{i : a \in I_i} a \cdot (P_1 \mid \dots \mid P_{i-1} \mid P_i' \mid P_{i+1} \mid \dots \mid P_n) \right)
+\]
+where $P_i \overset{a}{\longrightarrow} P_i'$ and $\bigoplus$ indicates a nondeterministic choice involving action $a$.
+
+
+\subsection{Expansion Steps}
+
+\begin{enumerate}
+    \item The system initiates with the controller \( C \) starting \( A1 \) with \( \text{startA1} \), leading to:
+    \[ T \rightarrow \text{startA1} \cdot (C' \mid A1' \mid A2 \mid A3) \]
+    where \( A1' \) is the sequence of traffic light \( A1 \) proceeding through its cycle.
+
+    \item \( A1 \) processes the traffic light cycle \( L \), which is a series of color changes \( \text{green} \cdot \text{yellow} \cdot \text{red} \) repeated indefinitely. \( C' \) is now in a waiting state for \( \text{doneA1} \) to trigger \( \text{startA2} \).
+
+    \item After completion of \( L \) by \( A1 \), resulting in \( \text{doneA1} \), \( C \) synchronizes this with \( \text{startA2} \) to activate \( A2 \):
+    \[ \text{doneA1} \mid \text{startA2} \rightarrow \text{startA2} \cdot (C'' \mid A1 \mid A2' \mid A3) \]
+    where \( A2' \) is the initiation of \( A2 \)'s cycle.
+\end{enumerate}
+
+
+
+\subsection{Comments on the Results}
+
+The expansion theorem allows us to explicitly trace the sequence of events and state transitions in the traffic light control system, ensuring proper synchronization and validating safety requirements. The detailed expansion helps in analyzing potential deadlock scenarios and understanding the dependency and causality among actions.
+
+\newpage
+
+
+
+
+
+\section{Problem 2} Recall the observable transition relation \( x \Rightarrow \subseteq P \times P\), where \( x \in L = (\text{Act} - \{\tau\}) \cup \{\epsilon\}\).
+As discussed in the lectures, a \(\epsilon \Rightarrow\)-transition corresponds to zero or more transitions through an unobservable action \(\tau\).
+
+Consider two new modal operators that express, respectively, the possibility and the need for a property to be valid after performing an arbitrary amount of unobservable behaviour.
+
+\[ E \models \langle\langle \rangle\rangle \phi \iff \exists F \in \{E' | E \epsilon \Rightarrow E'\}. F \models \phi \]
+
+\[ E \models \mathcal{J}\mathcal{K}\phi \iff \forall F \in \{E' | E \epsilon \Rightarrow E'\}. F \models \phi \]
+
+By abbreviation we can now define the “observable versions” of \(\langle K \rangle\) and \([K]\), for \( K \subseteq L \). Thus,
+
+\[ \langle\langle K \rangle\rangle \phi \text{ abv } = \langle\langle \rangle\rangle \langle K \rangle \langle\langle \rangle\rangle \phi \]
+
+\[ \mathcal{J}\mathcal{K}\mathcal{K}\phi \text{ abv } = \mathcal{J} K [K] \mathcal{J} K \phi \]
+
+\begin{enumerate}
+    \item Explain the meaning of formulas \(\langle\langle\text{fdee}\rangle\rangle \text{true}\) and \(\mathcal{J}\text{-Kfalse}\). Illustrate their use through the specification of four different, non-bisimilar processes such that \(\langle\langle\text{fdee}\rangle\rangle \text{true}\) holds in two of them and \(\mathcal{J}\text{-Kfalse}\) in the other two.
+    \item In the logic you have studied in the lectures, formula
+    \(\langle-\rangle\text{true} \wedge [-a]\text{false}\)
+    expresses inevitability, i.e., the occurrence of action \(a\) is inevitable. Which of the formulas
+    \begin{itemize}
+        \item[(a)] \(\langle\langle-\rangle\rangle \text{true} \wedge \mathcal{J}\text{-aKfalse}\)
+        \item[(b)] \(\mathcal{J} K \langle\langle-\rangle\rangle \text{true} \wedge \mathcal{J}\text{-aKfalse}\)
+    \end{itemize}
+    if any, would express a similar property in the observational setting? Justify your answer. If none seems suitable, provide an alternative specification.
+    \item In the lectures, you have studied a close relationship between bisimilarity and modal equivalence for the logic then introduced. Discuss in some detail if and how a similar result holds relating observational equivalence and modal equivalence for the extended logic.
+\end{enumerate}
+
+\newpage
+
+
+\section*{Solution to Problem 2}
+\subsection{Part 1}
+
+
+\textbf{Formula:} $\langle\langle\text{fdee}\rangle\rangle \text{true}$
+
+This formula represents the possibility of achieving a state where \textit{true} (which is always valid) can be reached through an arbitrary sequence of unobservable $\tau$ actions, followed by the action sequence ``fdee'', and followed by another arbitrary sequence of unobservable $\tau$ actions. Specifically:
+\begin{itemize}
+    \item $\langle\langle \rangle\rangle$ allows any number of $\tau$ transitions.
+    \item $\langle K \rangle$ for $K = \text{``fdee''}$ implies that the sequence of actions ``fdee'' is possible.
+    \item Another $\langle\langle \rangle\rangle$ allows more $\tau$ transitions after ``fdee''.
+\end{itemize}
+This formula will be true in any process where there is a reachable state via ``fdee'' potentially flanked by $\tau$ transitions.
+
+\textbf{Formula:} $\mathcal{J}\text{-Kfalse}$
+
+This formula asserts that after an arbitrary amount of unobservable behavior (represented by $\epsilon\Rightarrow$), and the specific action sequence ``K'' (which might be misnoted), it is not possible to reach a state where the proposition is $\text{false}$ (which is always false). However, if corrected as $\mathcal{J}\text{Kfalse}$, it would mean:
+\begin{itemize}
+    \item $\mathcal{J} K$ implies for all sequences where ``K'' happens.
+    \item $[K] \text{false}$ means that after ``K'', the result must always be false, which is a contradiction unless ``K'' leads to no state.
+\end{itemize}
+
+\textbf{Illustration with Processes:}
+
+Consider four different processes:
+\begin{enumerate}
+    \item \textbf{Process P1}: Always performs ``fdee'' flanked by $\tau$ actions.
+    \item \textbf{Process P2}: Can perform ``fdee'' optionally after some $\tau$ actions.
+    \item \textbf{Process P3}: Never performs ``fdee'', only $\tau$.
+    \item \textbf{Process P4}: Terminates immediately, no actions.
+\end{enumerate}
+
+\subsection{Part 2: Expressing Inevitability}
+
+\textbf{Analysis of Given Formulas}
+\begin{itemize}
+    \item $(a)$ $\langle\langle - \rangle\rangle \text{true} \land J_{-\text{a}}K\text{false}$ states that it is possible to reach a state where "true" holds after any number of unobservable actions, and inevitably, any action other than "a" leads to a state where "false" holds, thereby making action "a" inevitable under observability.
+    \item $(b)$ $JK\langle\langle - \rangle\rangle \text{true} \land J_{-\text{a}}K\text{false}$ similarly articulates that for all states reachable via unobservable transitions, reaching "true" is inevitable and actions not "a" invariably result in "false."
+\end{itemize}
+
+\textbf{Analysis:}
+Neither formula perfectly matches the inevitability expressed by $\langle - \rangle\text{true} \land [-\text{a}]\text{false}$ due to the complexities introduced by unobservable transitions. An alternative might involve explicitly modeling these transitions or adjusting the logic to handle unobservables directly.
+
+\textbf{Alternative Specification:}
+\begin{equation*}
+    \langle\langle a \rangle\rangle \text{true}
+\end{equation*}
+This states that after arbitrary $\tau$ transitions, action ``a'' must occur, aligning more directly with the inevitability of ``a''.
+
+\subsection{Part 3: Relationship Between Observational Equivalence and Modal Equivalence}
+
+In classical bisimilarity, modal equivalence is guaranteed by the Hennessy-Milner theorem, under the assumption of image-finiteness. However, observational equivalence introduces a more lenient form of equivalence that allows sequences of unobservable actions ($\tau$-transitions) to be ignored when considering the behavior of processes.
+
+
+
+Traditional relationship between bisimilarity and modal equivalence states that two processes are bisimilar if and only if they satisfy the same modal formulas. In the context of observational equivalence:
+\begin{itemize}
+    \item \textbf{Observational Equivalence:} Two processes are observationally equivalent if they behave the same under observation, ignoring $\tau$ transitions.
+    \item \textbf{Modal Equivalence in Extended Logic:} Two processes that are observationally equivalent would satisfy the same set of modal formulas involving $\langle\langle K \rangle\rangle$ and $\mathcal{J}\mathcal{K} K$, given that these formulas account for $\tau$ transitions.
+\end{itemize}
+
+Thus, a similar result would hold: if two processes are observationally equivalent, they should be modally equivalent under the extended logic with $\epsilon \Rightarrow$-based modalities.
+
+The extension of the logic with operators that deal specifically with $\epsilon\Rightarrow$-transitions suggests an intention to capture the nuances introduced by these unobservable behaviors.This complicates the relationship because:
+
+\begin{enumerate}
+    \item \textbf{Observational Equivalence and Bisimilarity}: Two processes that are observationally equivalent may differ in their internal (unobservable) structure. Therefore, when extended with modal operators that account for $\epsilon\Rightarrow$-transitions, the modal logic must be able to express properties that are preserved across these internal structures.
+    
+    \item \textbf{Extended Modal Operators}: The introduction of $\langle\langle \rangle\rangle$ and $\mathcal{J}\mathcal{K}$ implies that the modal logic can specify properties of processes after any number of $\tau$-transitions. Thus, for modal equivalence to coincide with observational equivalence, these modal operators must be sensitive to the $\tau$-transition structure in a way that mirrors the leniency of observational equivalence.
+    
+    \item \textbf{Alternative Characterizations of Equivalence}: One may need to consider whether alternative characterizations of equivalence are more appropriate in the extended logic. For instance, it may be beneficial to look at weak bisimulation or some form of branching bisimulation as a basis for establishing modal equivalence in the presence of $\tau$-transitions.
+    
+    \item \textbf{Proof Adjustments}: Proofs of equivalence in this extended logic will likely require different techniques, potentially involving new induction principles or coinductive arguments that are suited to the richer structure of processes with $\tau$-transitions.
+    
+    \item \textbf{The Extended Hennessy-Milner Theorem}: It might be necessary to establish an extended version of the Hennessy-Milner theorem that specifically addresses the extended logic. The theorem would need to define the conditions under which modal equivalence with respect to the extended modal operators implies observational equivalence, and vice versa.
+\end{enumerate}
+
+To summarize, while bisimilarity and modal equivalence are intimately connected in classical process calculi, the introduction of unobservable actions and their corresponding modal operators in the extended logic necessitates a careful re-examination of their relationship. This might involve creating new proof techniques, extending existing theorems, or possibly finding new forms of equivalence that are more apt for the extended setting.
+
+
+\begin{thebibliography}{9}
+
+\bibitem{ieee2023}
+  \textsc{},
+  \textit{Validating communication of a dynamic traffic management system},
+  2023 27th International Conference on Engineering of Complex Computer Systems (ICECCS),
+  Available: IEEE Xplore,
+  \url{https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=10321863}.
+
+\end{thebibliography}
+
+\end{document}

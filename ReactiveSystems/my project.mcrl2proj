@@ -1,0 +1,7 @@
+<root>
+ <spec>my project_spec.mcrl2</spec>
+ <properties>
+  <property>no2green</property>
+  <property>alive</property>
+ </properties>
+</root>
